@@ -15,13 +15,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
-from .modules.elmo import ElmobiLm
-from .modules.lstm import LstmbiLm
-from .modules.token_embedder import ConvTokenEmbedder, LstmTokenEmbedder
-from .modules.embedding_layer import EmbeddingLayer
-from .modules.classify_layer import SoftmaxLayer, CNNSoftmaxLayer, SampledSoftmaxLayer
-from .dataloader import load_embedding
-from .utils import dict2namedtuple
+from modules.elmo import ElmobiLm
+from modules.lstm import LstmbiLm
+from modules.token_embedder import ConvTokenEmbedder, LstmTokenEmbedder
+from modules.embedding_layer import EmbeddingLayer
+from modules.classify_layer import SoftmaxLayer, CNNSoftmaxLayer, SampledSoftmaxLayer
+from dataloader import load_embedding
+from utils import dict2namedtuple
 from collections import Counter
 import numpy as np
 
@@ -318,6 +318,12 @@ def train_model(epoch, opt, model, optimizer,
   :param test_result:
   :return:
   """
+  device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+  if torch.cuda.device_count() > 0:
+    model = nn.DataParallel(model,device_ids=[1,2,3])
+    optimizer = nn.DataParallel(optimizer,device_ids=[1,2,3])
+  model.to(device)
+  optimizer.to(device)
   model.train()
 
   total_loss, total_tag = 0.0, 0
@@ -337,7 +343,7 @@ def train_model(epoch, opt, model, optimizer,
   for w, c, lens, masks in zip(train_w, train_c, train_lens, train_masks):
     cnt += 1
     model.zero_grad()
-    loss_forward, loss_backward = model.forward(w, c, masks)
+    loss_forward, loss_backward = model.module.forward(w, c, masks)
 
     loss = (loss_forward + loss_backward) / 2.0
     total_loss += loss_forward.data[0]
@@ -346,10 +352,10 @@ def train_model(epoch, opt, model, optimizer,
     loss.backward()
 
     torch.nn.utils.clip_grad_norm(model.parameters(), opt.clip_grad)
-    optimizer.step()
+    optimizer.module.step()
     if cnt * opt.batch_size % 1024 == 0:
       logging.info("Epoch={} iter={} lr={:.6f} train_ppl={:.6f} time={:.2f}s".format(
-        epoch, cnt, optimizer.param_groups[0]['lr'],
+        epoch, cnt, optimizer.module.param_groups[0]['lr'],
         np.exp(total_loss / total_tag), time.time() - start_time
       ))
       start_time = time.time()
@@ -358,7 +364,7 @@ def train_model(epoch, opt, model, optimizer,
       if valid is None:
         train_ppl = np.exp(total_loss / total_tag)
         logging.info("Epoch={} iter={} lr={:.6f} train_ppl={:.6f}".format(
-          epoch, cnt, optimizer.param_groups[0]['lr'], train_ppl))
+          epoch, cnt, optimizer.module.param_groups[0]['lr'], train_ppl))
         if train_ppl < best_train:
           best_train = train_ppl
           logging.info("New record achieved on training dataset!")
@@ -366,7 +372,7 @@ def train_model(epoch, opt, model, optimizer,
       else:
         valid_ppl = eval_model(model, valid)
         logging.info("Epoch={} iter={} lr={:.6f} valid_ppl={:.6f}".format(
-          epoch, cnt, optimizer.param_groups[0]['lr'], valid_ppl))
+          epoch, cnt, optimizer.module.param_groups[0]['lr'], valid_ppl))
 
         if valid_ppl < best_valid:
           model.save_model(opt.model, opt.save_classify_layer)
@@ -376,7 +382,7 @@ def train_model(epoch, opt, model, optimizer,
           if test is not None:
             test_result = eval_model(model, test)
             logging.info("Epoch={} iter={} lr={:.6f} test_ppl={:.6f}".format(
-              epoch, cnt, optimizer.param_groups[0]['lr'], test_result))
+              epoch, cnt, optimizer.module.param_groups[0]['lr'], test_result))
   return best_train, best_valid, test_result
 
 
