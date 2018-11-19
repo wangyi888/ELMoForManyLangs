@@ -636,8 +636,8 @@ def test():
   cmd.add_argument("--batch_size", "--batch", type=int, default=1, help='the batch size.')
   args = cmd.parse_args(sys.argv[2:])
 
-  if args.gpu >= 0:
-    torch.cuda.set_device(args.gpu)
+  # if args.gpu >= 0:
+  #   torch.cuda.set_device(args.gpu)
   use_cuda = args.gpu >= 0 and torch.cuda.is_available()
   
   args2 = dict2namedtuple(json.load(codecs.open(os.path.join(args.model, 'config.json'), 'r', encoding='utf-8')))
